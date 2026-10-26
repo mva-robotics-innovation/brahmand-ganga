@@ -1,0 +1,5 @@
+*.html linguist-documentation=true
+*.css linguist-documentation=true
+*.js linguist-documentation=true
+*.py linguist-detectable=true
+frontend/* linguist-documentation=true
