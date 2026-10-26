@@ -25,7 +25,7 @@ We link what astronaut **SEES** to how astronaut **FEELS**.
 - **Emergency System:** Auto-alerts if vitals critical + shows NASA Medical Checklist
 - **Privacy First:** All processing on-device, no data sent to Earth.
 
-### 3. INNOVATION - Why We Win
+### 3. INNOVATION - Our Unique Feature
 **No one connects External Environment to Internal Health.**
 Other apps show vitals OR show Earth. We prove: `Stress ↑ → Suggest Himalaya View → HRV ↓ → Mood ↑`
 We turn Earth Observation into a clinical therapy tool.
