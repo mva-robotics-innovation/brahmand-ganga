@@ -95,18 +95,34 @@ async def apod():
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                "https://api.nasa.gov/planetary/apod",
-                params={"api_key": NASA_KEY},
-                timeout=10
+                "https://science.nasa.gov/wp-json/wp/v2/apod-basic",
+                params={
+                    "date": datetime.date.today().isoformat(),
+                    "api_key": fkNRmzhqBNTFNqB7JDcpDPd8JtkK989qdc6QdRRQ
+                },
+                timeout=15
             )
             response.raise_for_status()
-            return response.json()
-    except Exception:
-        return {
-            "url": "https://apod.nasa.gov/apod/image/2403/DarkNebulae_Tomason_1080.jpg",
-            "title": "Eagle Nebula Fallback"
-        }
+            data = response.json()
 
+            if isinstance(data, list):
+                data = data[0] if data else {}
+
+            # Preserve the original NASA page URL.
+            data["page_url"] = data.get("permalink") or data.get("url")
+
+            # Keep image displays compatible with the old frontend.
+            if data.get("media_type") == "image" and data.get("hdurl"):
+                data["url"] = data["hdurl"]
+
+            return data
+
+    except Exception as e:
+        return {
+            "title": "NASA APOD temporarily unavailable",
+            "url": "https://apod.nasa.gov/apod/image/2403/DarkNebulae_Tomason_1080.jpg",
+            "error": str(e)
+        }
 
 @app.get("/api/nasa/neo")
 async def neo():
