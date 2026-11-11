@@ -37,3 +37,10 @@ We turn Earth Observation into a clinical therapy tool.
 - **Backend:** Python (FastAPI), NASA Data Processor
 
 ### 5. PROJECT STRUCTURE
+
+## Run and deploy
+- Local: `pip install -r requirements.txt && uvicorn app:app --reload` then open http://localhost:8000
+- Render start command: `uvicorn app:app --host 0.0.0.0 --port $PORT`
+- Render env var: `NASA_API_KEY` (get a free key at api.nasa.gov; DEMO_KEY is rate-limited)
+- If the frontend is hosted separately, set your Render URL in `frontend/assets/config.js`
+- Old dashboards are kept in `_legacy_frontend/` for reference

@@ -94,35 +94,13 @@ async def telemetry():
 async def apod():
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(
-                "https://science.nasa.gov/wp-json/wp/v2/apod-basic",
-                params={
-                    "date": datetime.date.today().isoformat(),
-                    "api_key": NASA_KEY
-                },
-                timeout=15
-            )
-            response.raise_for_status()
-            data = response.json()
-
-            if isinstance(data, list):
-                data = data[0] if data else {}
-
-            # Preserve the original NASA page URL.
-            data["page_url"] = data.get("permalink") or data.get("url")
-
-            # Keep image displays compatible with the old frontend.
-            if data.get("media_type") == "image" and data.get("hdurl"):
-                data["url"] = data["hdurl"]
-
-            return data
-
+            r = await client.get("https://api.nasa.gov/planetary/apod",
+                                 params={"api_key": NASA_KEY}, timeout=15)
+            r.raise_for_status()
+            return r.json()
     except Exception as e:
-        return {
-            "title": "NASA APOD temporarily unavailable",
-            "url": "https://apod.nasa.gov/apod/image/2403/DarkNebulae_Tomason_1080.jpg",
-            "error": str(e)
-        }
+        raise HTTPException(status_code=502, detail=f"NASA APOD unavailable: {e}")
+
 
 @app.get("/api/nasa/neo")
 async def neo():
@@ -142,8 +120,73 @@ async def neo():
             response.raise_for_status()
             return response.json()
 
-    except Exception:
-        return {"element_count": 0, "near_earth_objects": {}}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"NASA NeoWs unavailable: {e}")
+
+
+
+@app.get("/api/nasa/epic")
+async def epic():
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get("https://epic.gsfc.nasa.gov/api/natural", timeout=15)
+            r.raise_for_status()
+            items = r.json()[:12]
+        out = []
+        for i in items:
+            d = i["date"][:10].replace("-", "/")
+            out.append({"date": i["date"].replace(" ", "T"), "caption": i.get("caption", ""),
+                        "url": f"https://epic.gsfc.nasa.gov/archive/natural/{d}/jpg/{i['image']}.jpg"})
+        return {"images": out}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"NASA EPIC unavailable: {e}")
+
+
+@app.get("/api/nasa/donki")
+async def donki():
+    end = datetime.date.today()
+    start = end - datetime.timedelta(days=7)
+    p = {"startDate": start.isoformat(), "endDate": end.isoformat(), "api_key": NASA_KEY}
+    base = "https://api.nasa.gov/DONKI/"
+    try:
+        async with httpx.AsyncClient() as client:
+            res = []
+            for ep in ("FLR", "CME", "GST"):
+                r = await client.get(base + ep, params=p, timeout=20)
+                r.raise_for_status()
+                res.append(r.json() or [])
+        flares, cmes, storms = res
+        strong = [f for f in flares if str(f.get("classType", ""))[:1] in ("M", "X")]
+        level = "high" if any(str(f.get("classType", ""))[:1] == "X" for f in flares) or storms \
+            else "elevated" if strong or cmes else "quiet"
+        return {"level": level, "flares": flares, "cmes": cmes, "storms": storms}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"NASA DONKI unavailable: {e}")
+
+
+@app.get("/api/crew/telemetry")
+async def crew_telemetry():
+    """Simulated crew vitals for demonstration until a real sensor feed is connected."""
+    return {"hr": round(66 + random.gauss(0, 4)), "hrv": round(52 + random.gauss(0, 6)),
+            "spo2": min(100, round(97.5 + random.gauss(0, .8))), "temp": round(36.7 + random.gauss(0, .15), 1),
+            "rad": round(0.55 + random.random() * 0.15, 2), "stress": round(max(0, min(100, 32 + random.gauss(0, 8)))),
+            "simulated": True, "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()}
+
+
+alerts_store = []
+
+
+@app.post("/api/alerts")
+async def post_alert(payload: dict):
+    a = {"id": f"ALR-{len(alerts_store) + 1:04d}", "t": datetime.datetime.now(datetime.timezone.utc).isoformat(), **payload}
+    alerts_store.append(a)
+    del alerts_store[:-200]
+    return a
+
+
+@app.get("/api/alerts")
+async def list_alerts():
+    return alerts_store[-50:]
 
 
 @app.get("/api/ml/predict/{page_id}")
