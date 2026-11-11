@@ -98,7 +98,7 @@ async def apod():
                 "https://science.nasa.gov/wp-json/wp/v2/apod-basic",
                 params={
                     "date": datetime.date.today().isoformat(),
-                    "api_key": fkNRmzhqBNTFNqB7JDcpDPd8JtkK989qdc6QdRRQ
+                    "api_key": NASA_KEY
                 },
                 timeout=15
             )
