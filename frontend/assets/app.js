@@ -161,13 +161,86 @@ ocr(){const inp=el('input',{type:'file',accept:'image/*'}),out=el('pre',{class:'
  return card('Report OCR (runs in your browser)',el('div',{},inp,el('div',{class:'row'},b),out,kv),'Always verify extracted values against the original report.',1)},
 stress(){const s=el('input',{type:'range',min:0,max:100,value:store.get('bg_stress',30)}),v=el('b',{},s.value),m=el('select',{},['Calm','Okay','Tense','Low','Anxious'].map(x=>el('option',{},x))),r=el('div');s.oninput=()=>v.textContent=s.value;
  return card('How are you right now?',el('div',{},el('label',{},'Stress ',v,s),el('label',{},'Mood',m),el('div',{class:'row'},el('button',{class:'btn pri',onclick:()=>{store.set('bg_stress',+s.value);const l=log();l.push({t:Date.now(),stress:+s.value,mood:m.value});store.set('bg_log',l);r.replaceChildren(...alertEls(assess({stress:+s.value})),+s.value>=60?el('a',{class:'btn sm',href:'page7.html',target:'_blank',rel:'noopener'},'Start Earth-gazing'):'')}},'Save check-in')),r),null,1)},
-gaze(){const V=[['Himalaya','26,82,32,92'],['Ganga delta','20,86,26,92'],['Pacific clouds','0,-160,12,-148'],['Patna (home)','24.5,84.5,26.5,86.5'],['Haldwani (home)','28.7,79,29.7,80'],['Amazon','-6,-64,2,-54']];
- const sel=el('select',{},V.map(([n])=>el('option',{},n))),pre=el('input',{type:'range',min:0,max:100,value:store.get('bg_stress',60)}),post=el('input',{type:'range',min:0,max:100,value:30}),img=el('img',{class:'fit',alt:'NASA MODIS satellite view'}),msg=el('p',{class:'note'}),rec=el('p',{class:'note'});
- const show=()=>{const b=V.find(x=>x[0]===sel.value)[1];img.src='https://wvs.earthdata.nasa.gov/api/v1/snapshot?REQUEST=GetSnapshot&LAYERS=MODIS_Terra_CorrectedReflectance_TrueColor&CRS=EPSG:4326&TIME='+yesterday()+'&BBOX='+b+'&FORMAT=image/jpeg&WIDTH=800&HEIGHT=600';msg.textContent='NASA MODIS Terra, '+yesterday()};
- const suggest=()=>{const s=+pre.value;rec.textContent='Suggested: '+(s>=70?'Himalaya or Pacific clouds, wide and quiet views':s>=40?'Ganga delta, a familiar flowing landscape':'Your hometown, to keep a sense of connection');sel.value=s>=70?'Himalaya':s>=40?'Ganga delta':'Patna (home)';show()};
- img.onerror=()=>msg.textContent='Imagery is unavailable right now (NASA servers or no connection). Try another region.';sel.onchange=show;pre.oninput=suggest;
- const save=el('button',{class:'btn pri',onclick:()=>{const g=store.get('bg_gaze',[]);g.push({t:Date.now(),view:sel.value,before:+pre.value,after:+post.value});store.set('bg_gaze',g);msg.textContent='Saved. Change: '+(+post.value-+pre.value)}},'Save session');
- queueMicrotask(suggest);return card('Earth-gazing session',el('div',{},el('label',{},'Stress before (0–100)',pre),rec,el('label',{},'View',sel),img,msg,el('label',{},'Stress after (0–100)',post),save),'Wellness support only, not treatment.',1)},
+gaze(){
+ const V=[
+  ['Himalaya', '82,26,92,32'],
+  ['Ganga delta', '86,20,92,26'],
+  ['Pacific clouds', '-160,0,-148,12'],
+  ['Patna (home)', '84.5,24.5,86.5,26.5'],
+  ['Haldwani (home)', '79,28.7,80,29.7'],
+  ['Amazon', '-64,-6,-54,2']
+ ];
+ const isExplorer=num===15;
+ const sel=el('select',{},V.map(([n])=>el('option',{},n)));
+ const pre=el('input',{type:'range',min:0,max:100,value:store.get('bg_stress',60)});
+ const post=el('input',{type:'range',min:0,max:100,value:30});
+ const img=el('img',{class:'fit',alt:'NASA Terra MODIS true-colour satellite image'});
+ const msg=el('p',{class:'note','aria-live':'polite'},'Choose a region to load NASA satellite imagery.');
+ const rec=el('p',{class:'note'});
+ const dateLabel=el('span',{class:'pill'},'');
+ const openLink=el('a',{class:'btn sm',target:'_blank',rel:'noopener noreferrer',href:'https://worldview.earthdata.nasa.gov/'},'Open NASA Worldview');
+ const imageWrap=el('div',{class:'mod15-image-wrap'});
+ const imgLink=el('a',{target:'_blank',rel:'noopener noreferrer',href:'https://worldview.earthdata.nasa.gov/','aria-label':'Open satellite image in a new tab'},img);
+ imageWrap.append(imgLink);
+ let attempt=0, dates=[];
+ const day=(n)=>new Date(Date.now()-n*864e5).toISOString().slice(0,10);
+ const makeUrl=(bbox,date)=>{
+  const q=new URLSearchParams({REQUEST:'GetSnapshot',LAYERS:'MODIS_Terra_CorrectedReflectance_TrueColor',CRS:'EPSG:4326',TIME:date,BBOX:bbox,FORMAT:'image/jpeg',WIDTH:'1000',HEIGHT:'700'});
+  return 'https://wvs.earthdata.nasa.gov/api/v1/snapshot?'+q.toString();
+ };
+ const show=()=>{
+  const selected=V.find(x=>x[0]===sel.value)||V[0];
+  dates=[1,2,3,4,5].map(day);attempt=0;
+  msg.textContent='Requesting NASA Terra MODIS imagery…';dateLabel.textContent='Loading satellite data';
+  img.removeAttribute('src');
+  const tryDate=()=>{
+   if(attempt>=dates.length){
+    img.removeAttribute('src');imgLink.href='https://worldview.earthdata.nasa.gov/';
+    msg.textContent='NASA imagery could not be loaded for the recent dates. This can happen during satellite-data delays or temporary NASA service interruptions. Open NASA Worldview to inspect the region.';
+    dateLabel.textContent='Imagery unavailable';return;
+   }
+   const date=dates[attempt++],url=makeUrl(selected[1],date);
+   img.onload=()=>{imgLink.href=url;msg.textContent='NASA Terra MODIS · True Color · '+date+' · Region: '+selected[0];dateLabel.textContent='Image date: '+date;};
+   img.onerror=()=>{tryDate()};
+   img.src=url;
+  };
+  tryDate();
+ };
+ const suggest=()=>{
+  const s=+pre.value;
+  if(isExplorer){rec.textContent='Suggested viewing region: '+(s>=70?'Himalaya — broad mountain terrain':s>=40?'Ganga delta — river and coastal patterns':'Patna — a familiar regional view');}
+  else rec.textContent='Suggested: '+(s>=70?'Himalaya or Pacific clouds, wide and quiet views':s>=40?'Ganga delta, a familiar flowing landscape':'Your hometown, to keep a sense of connection');
+  sel.value=s>=70?'Himalaya':s>=40?'Ganga delta':'Patna (home)';show();
+ };
+ sel.onchange=show;
+ pre.oninput=()=>{rec.textContent='Stress before session: '+pre.value+'/100';};
+ img.onerror=()=>{};
+ const save=el('button',{class:'btn pri',onclick:()=>{
+  const g=store.get('bg_gaze',[]);g.push({t:Date.now(),view:sel.value,before:+pre.value,after:+post.value});store.set('bg_gaze',g);
+  msg.textContent='Session saved on this device. Stress change: '+(+post.value-+pre.value)+' points.';
+ }},'Save session');
+ const controls=el('div',{class:'mod15-controls'},
+  el('label',{},'Select region',sel),
+  el('label',{},'Stress before (0–100)',pre),
+  rec,
+  el('label',{},'Stress after (0–100)',post),
+  el('div',{class:'row'},save,openLink)
+ );
+ if(isExplorer){
+  const panel=el('div',{class:'mod15-panel'},
+   el('div',{class:'mod15-image-head'},el('div',{},el('strong',{},'Satellite image'),el('p',{class:'note'},'Terra / MODIS · Corrected Reflectance · True Color')),dateLabel),
+   imageWrap,msg,
+   el('p',{class:'mod15-attribution'},'Imagery source: NASA Global Imagery Browse Services (GIBS) / Earthdata. Satellite imagery is not a real-time live feed.'),
+   controls
+  );
+  const c=card('NASA MODIS Earth Observation',panel,'Choose a region to view the latest available daily satellite image. The service may publish imagery with a delay.',1);
+  c.classList.add('mod15-card');
+  queueMicrotask(()=>{pre.value=store.get('bg_stress',60);rec.textContent='Select a region, or use the stress-based suggestion.';sel.value='Ganga delta';show();});
+  return c;
+ }
+ queueMicrotask(suggest);
+ return card('Earth-gazing session',el('div',{},el('label',{},'Stress before (0–100)',pre),rec,el('label',{},'View',sel),img,msg,el('label',{},'Stress after (0–100)',post),save),'Wellness support only, not treatment.',1);
+},
 gazelog(){const g=store.get('bg_gaze',[]);const avg=g.length?(g.reduce((a,x)=>a+x.before-x.after,0)/g.length).toFixed(1):null;return card('Earth-gazing results',g.length?el('div',{},el('div',{class:'tiles'},tile('Sessions',g.length),tile('Average stress drop',avg)),el('table',{},g.slice(-8).reverse().map(x=>el('tr',{},el('td',{},fmt(x.t)),el('td',{},x.view),el('td',{},x.before+' → '+x.after))))):el('p',{},'No sessions yet. Start one on the Earth-Gazing Therapy page.'),null,1)},
 epic(){const box=el('div',{},el('p',{class:'note'},'Loading NASA EPIC…'));let t;const c=card('Earth from NASA EPIC (DSCOVR)',box,'Full-disk Earth images, about 1.5 million km from Earth.',1);
  get('/api/nasa/epic').then(d=>{const im=d.images||[];if(!im.length)throw 0;const img=el('img',{class:'fit',alt:'Earth from DSCOVR EPIC'}),cap=el('p',{class:'note'});let i=0;const s=()=>{img.src=im[i].url;cap.textContent=fmt(im[i].date+'Z')+' UTC · '+im[i].caption;i=(i+1)%im.length};s();const b=el('button',{class:'btn sm',onclick:()=>{if(t){clearInterval(t);t=0;b.textContent='Play rotation'}else{t=setInterval(s,900);timers.push(t);b.textContent='Pause'}}},'Play rotation');box.replaceChildren(img,el('div',{class:'row'},b,el('button',{class:'btn sm',onclick:s},'Next frame')),cap)}).catch(()=>box.replaceChildren(el('div',{class:'alert warn'},'EPIC imagery is unavailable. Check the server NASA key or try later.')));return c},
