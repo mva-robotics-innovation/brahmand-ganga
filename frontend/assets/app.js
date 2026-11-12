@@ -61,6 +61,44 @@ const tile=(l,v,u='')=>el('div',{class:'tile'},el('small',{},l),el('b',{},v+u));
 const field=(l,id,o={})=>el('label',{},l,el('input',{id,type:'number',step:o.step||'any',value:o.v??'',min:o.min,max:o.max,required:o.req?'':false}));
 const fmt=d=>new Date(d).toLocaleString();
 const yesterday=()=>new Date(Date.now()-864e5).toISOString().slice(0,10);
+
+/* Safely render NASA APOD explanation markup and Markdown links. */
+function apodRichText(raw){
+ const source=String(raw??'')
+  .replace(/\\</g,'<')
+  .replace(/\\>/g,'>')
+  .replace(/\\\//g,'/')
+  .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,'<a href="$2">$1</a>');
+ const parsed=new DOMParser().parseFromString(source,'text/html');
+ const allowed=new Set(['P','STRONG','B','EM','I','BR','A','UL','OL','LI']);
+ const copy=node=>{
+  if(node.nodeType===Node.TEXT_NODE)return document.createTextNode(node.nodeValue||'');
+  if(node.nodeType!==Node.ELEMENT_NODE)return document.createDocumentFragment();
+  if(!allowed.has(node.tagName)){
+   const frag=document.createDocumentFragment();
+   [...node.childNodes].forEach(child=>frag.append(copy(child)));
+   return frag;
+  }
+  const out=document.createElement(node.tagName.toLowerCase());
+  if(node.tagName==='A'){
+   let href=node.getAttribute('href')||'';
+   const wrapped=href.match(/^\[?(https?:\/\/[^\]]+?)\]?\((https?:\/\/[^)]+)\)$/);
+   if(wrapped)href=wrapped[2];
+   try{
+    const u=new URL(href,location.href);
+    if(u.protocol==='https:'||u.protocol==='http:'){
+     out.href=u.href;out.target='_blank';out.rel='noopener noreferrer';
+    }
+   }catch{}
+  }
+  [...node.childNodes].forEach(child=>out.append(copy(child)));
+  return out;
+ };
+ const fragment=document.createDocumentFragment();
+ [...parsed.body.childNodes].forEach(node=>fragment.append(copy(node)));
+ return fragment;
+}
+
 /* ---------- widgets ---------- */
 const W={
 crew(){const box=el('div',{},el('p',{class:'note'},'Loading…'));const hist={hr:[]};
@@ -99,7 +137,7 @@ gazelog(){const g=store.get('bg_gaze',[]);const avg=g.length?(g.reduce((a,x)=>a+
 epic(){const box=el('div',{},el('p',{class:'note'},'Loading NASA EPIC…'));let t;const c=card('Earth from NASA EPIC (DSCOVR)',box,'Full-disk Earth images, about 1.5 million km from Earth.',1);
  get('/api/nasa/epic').then(d=>{const im=d.images||[];if(!im.length)throw 0;const img=el('img',{class:'fit',alt:'Earth from DSCOVR EPIC'}),cap=el('p',{class:'note'});let i=0;const s=()=>{img.src=im[i].url;cap.textContent=fmt(im[i].date+'Z')+' UTC · '+im[i].caption;i=(i+1)%im.length};s();const b=el('button',{class:'btn sm',onclick:()=>{if(t){clearInterval(t);t=0;b.textContent='Play rotation'}else{t=setInterval(s,900);timers.push(t);b.textContent='Pause'}}},'Play rotation');box.replaceChildren(img,el('div',{class:'row'},b,el('button',{class:'btn sm',onclick:s},'Next frame')),cap)}).catch(()=>box.replaceChildren(el('div',{class:'alert warn'},'EPIC imagery is unavailable. Check the server NASA key or try later.')));return c},
 donki(){const box=el('div',{},el('p',{class:'note'},'Loading NASA DONKI…'));get('/api/nasa/donki').then(d=>{const lvl=d.level;box.replaceChildren(el('div',{class:'alert '+(lvl==='high'?'critical':lvl==='elevated'?'warn':'ok')},'Space weather, last 7 days: '+lvl),el('div',{class:'tiles'},tile('Solar flares',d.flares.length),tile('CMEs',d.cmes.length),tile('Geomagnetic storms',d.storms.length)),el('table',{},[...d.flares.slice(-5).map(x=>['Flare '+(x.classType||''),x.beginTime]),...d.storms.slice(-3).map(x=>['Storm',x.startTime])].map(r=>el('tr',{},el('td',{},r[0]),el('td',{},r[1]||''))))) ;store.set('bg_space',d.level)}).catch(()=>box.replaceChildren(el('div',{class:'alert warn'},'Space weather data is unavailable right now.')));return card('Space radiation (NASA DONKI)',box,'Flares M-class and above raise crew radiation risk.',1)},
-apod(){const box=el('div',{},el('p',{class:'note'},'Loading…'));get('/api/nasa/apod').then(d=>box.replaceChildren(d.media_type==='video'?el('a',{class:'btn',href:d.url,target:'_blank',rel:'noopener'},'Watch today’s video'):el('img',{class:'fit',src:d.url,alt:d.title}),el('h3',{style:'margin-top:12px'},d.title||''),el('p',{},d.explanation||''),el('p',{class:'note'},d.copyright?'© '+d.copyright:'NASA'))).catch(()=>box.replaceChildren(el('div',{class:'alert warn'},'Could not load today’s picture.')));return card('Astronomy Picture of the Day',box,null,1)},
+apod(){const box=el('div',{},el('p',{class:'note'},'Loading…'));get('/api/nasa/apod').then(d=>{const media=d.media_type==='video'?el('a',{class:'btn',href:d.url,target:'_blank',rel:'noopener noreferrer'},'Watch today’s video'):el('img',{class:'fit',src:d.url,alt:d.title||'NASA Astronomy Picture of the Day'});const explanation=el('div',{class:'apod-explanation'});explanation.append(apodRichText(d.explanation||'No explanation was supplied by NASA.'));box.replaceChildren(media,el('h3',{style:'margin-top:12px'},d.title||''),explanation,el('p',{class:'note'},d.copyright?'© '+d.copyright:'NASA'))}).catch(()=>box.replaceChildren(el('div',{class:'alert warn'},'Could not load today’s picture.')));return card('Astronomy Picture of the Day',box,null,1)},
 neo(){const box=el('div',{},el('p',{class:'note'},'Loading…'));get('/api/nasa/neo').then(d=>{const l=Object.values(d.near_earth_objects||{}).flat();box.replaceChildren(el('div',{class:'tiles'},tile('Objects today',l.length),tile('Flagged hazardous',l.filter(x=>x.is_potentially_hazardous_asteroid).length)),l.length?el('table',{},el('tr',{},el('th',{},'Name'),el('th',{},'Diameter'),el('th',{},'Miss distance'),el('th',{},'Hazard')),l.slice(0,15).map(x=>el('tr',{},el('td',{},x.name),el('td',{},Math.round(x.estimated_diameter.meters.estimated_diameter_max)+' m'),el('td',{},Math.round(+x.close_approach_data[0].miss_distance.kilometers).toLocaleString()+' km'),el('td',{},x.is_potentially_hazardous_asteroid?'Yes':'No')))):el('p',{},'No data returned.'))}).catch(()=>box.replaceChildren(el('div',{class:'alert warn'},'Asteroid data is unavailable.')));return card('Near-Earth objects today (NASA NeoWs)',box,null,1)},
 iss(){const box=el('div',{},el('p',{class:'note'},'Locating the station…'));every(async()=>{try{const d=await get('https://api.wheretheiss.at/v1/satellites/25544',8000);const saa=d.latitude>-50&&d.latitude<0&&d.longitude>-90&&d.longitude<40;box.replaceChildren(el('div',{class:'tiles'},tile('Latitude',d.latitude.toFixed(2),'°'),tile('Longitude',d.longitude.toFixed(2),'°'),tile('Altitude',Math.round(d.altitude),' km'),tile('Speed',Math.round(d.velocity).toLocaleString(),' km/h')),el('div',{class:'alert '+(saa?'warn':'ok')},saa?'Inside the approximate South Atlantic Anomaly region: radiation is higher here.':'Outside the South Atlantic Anomaly region.'))}catch{box.replaceChildren(el('div',{class:'alert warn'},'Live position unavailable. Retrying.'))}},6000);return card('International Space Station',box,'Position from wheretheiss.at. The anomaly region is an approximate box.',1)},
 checklist(o){const st=store.get(o.k,{});return card(o.t,el('div',{},o.items.map((x,i)=>el('label',{class:'check'},el('input',{type:'checkbox',checked:st[i]?'':false,onchange:e=>{st[i]=e.target.checked;store.set(o.k,st)}}),x)),el('button',{class:'btn sm',onclick:()=>{store.set(o.k,{});location.reload()}},'Reset')),'Training aid. Follow your mission’s approved procedures.',0)},
