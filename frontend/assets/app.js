@@ -359,7 +359,25 @@ info(o){return card(null,el('div',{},o.items.map(([a,b])=>el('div',{style:'margi
 };
 /* ---------- shell ---------- */
 async function health(pill){try{await get('/api/health',20000);pill.textContent='Server online';pill.className='pill ok'}catch{pill.textContent='Server offline';pill.className='pill bad'}}
-function topbar(){const p=el('span',{class:'pill'},'Checking server…');health(p);return el('header',{class:'top'},el('a',{class:'brand',href:'index.html'},el('i'),'BRAHMAND GANGA'),el('nav',{},el('a',{href:'index.html#health'},'Health'),el('a',{href:'index.html#earth'},'Earth'),el('a',{href:'index.html#offline'},'Offline'),el('a',{href:'index.html#modules'},'All 30 modules')),p)}
+function topbar(){
+  const p=el('span',{class:'pill'},'Checking server…');
+  health(p);
+  return el('header',{class:'top'},
+    el('a',{class:'brand',href:'index.html'},el('i'),'BRAHMAND GANGA'),
+    el('nav',{},
+      el('a',{href:'index.html#health'},'Health'),
+      el('a',{href:'index.html#earth'},'Earth'),
+      el('a',{href:'index.html#offline'},'Offline'),
+      el('a',{href:'index.html#modules'},'All 30 modules'),
+      el('a',{
+        href:'https://brahmand-ganga.vercel.app/',
+        target:'_blank',
+        rel:'noopener noreferrer'
+      },'BRAHMAND GANGA ↗')
+    ),
+    p
+  );
+}
 function modCard(i){const m=M[i-1];return el('a',{class:'mc',href:'page'+i+'.html',target:'_blank',rel:'noopener'},el('b',{},m[0]),el('span',{},m[2]),el('small',{},m[1]))}
 function home(){const root=document.body;
  const earth=el('div',{class:'earth',role:'img','aria-label':'Earth from space'});get('/api/nasa/epic',12000).then(d=>{if(d.images&&d.images[0])earth.style.backgroundImage='url('+d.images[0].url+')'}).catch(()=>{earth.style.background='radial-gradient(circle at 35% 30%,#8fe3f2,#1b6f9a 55%,#0a2a48)'});
