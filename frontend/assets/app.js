@@ -182,26 +182,48 @@ gaze(){
  const imageWrap=el('div',{class:'mod15-image-wrap'});
  const imgLink=el('a',{target:'_blank',rel:'noopener noreferrer',href:'https://worldview.earthdata.nasa.gov/','aria-label':'Open satellite image in a new tab'},img);
  imageWrap.append(imgLink);
- let attempt=0, dates=[];
+ let attempt=0, dates=[], requestToken=0;
  const day=(n)=>new Date(Date.now()-n*864e5).toISOString().slice(0,10);
  const makeUrl=(bbox,date)=>{
-  const q=new URLSearchParams({REQUEST:'GetSnapshot',LAYERS:'MODIS_Terra_CorrectedReflectance_TrueColor',CRS:'EPSG:4326',TIME:date,BBOX:bbox,FORMAT:'image/jpeg',WIDTH:'1000',HEIGHT:'700'});
-  return 'https://wvs.earthdata.nasa.gov/api/v1/snapshot?'+q.toString();
+  // Use NASA GIBS official WMS GetMap endpoint. The older wvs snapshot
+  // endpoint is not the documented GIBS image service and can return a blank image.
+  const q=new URLSearchParams({
+   SERVICE:'WMS',
+   VERSION:'1.1.1',
+   REQUEST:'GetMap',
+   LAYERS:'MODIS_Terra_CorrectedReflectance_TrueColor',
+   STYLES:'',
+   SRS:'EPSG:4326',
+   BBOX:bbox,
+   WIDTH:'1200',
+   HEIGHT:'800',
+   FORMAT:'image/jpeg',
+   TIME:date
+  });
+  return 'https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?'+q.toString();
  };
  const show=()=>{
   const selected=V.find(x=>x[0]===sel.value)||V[0];
   dates=[1,2,3,4,5].map(day);attempt=0;
+  const token=++requestToken;
   msg.textContent='Requesting NASA Terra MODIS imagery…';dateLabel.textContent='Loading satellite data';
   img.removeAttribute('src');
   const tryDate=()=>{
+   if(token!==requestToken)return;
    if(attempt>=dates.length){
     img.removeAttribute('src');imgLink.href='https://worldview.earthdata.nasa.gov/';
     msg.textContent='NASA imagery could not be loaded for the recent dates. This can happen during satellite-data delays or temporary NASA service interruptions. Open NASA Worldview to inspect the region.';
     dateLabel.textContent='Imagery unavailable';return;
    }
    const date=dates[attempt++],url=makeUrl(selected[1],date);
-   img.onload=()=>{imgLink.href=url;msg.textContent='NASA Terra MODIS · True Color · '+date+' · Region: '+selected[0];dateLabel.textContent='Image date: '+date;};
-   img.onerror=()=>{tryDate()};
+   img.onload=()=>{
+    if(token!==requestToken)return;
+    if(!img.naturalWidth){tryDate();return;}
+    imgLink.href=url;
+    msg.textContent='NASA Terra MODIS · True Color · '+date+' · Region: '+selected[0];
+    dateLabel.textContent='Image date: '+date;
+   };
+   img.onerror=()=>{if(token===requestToken)tryDate();};
    img.src=url;
   };
   tryDate();
