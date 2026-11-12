@@ -172,7 +172,55 @@ gazelog(){const g=store.get('bg_gaze',[]);const avg=g.length?(g.reduce((a,x)=>a+
 epic(){const box=el('div',{},el('p',{class:'note'},'Loading NASA EPIC…'));let t;const c=card('Earth from NASA EPIC (DSCOVR)',box,'Full-disk Earth images, about 1.5 million km from Earth.',1);
  get('/api/nasa/epic').then(d=>{const im=d.images||[];if(!im.length)throw 0;const img=el('img',{class:'fit',alt:'Earth from DSCOVR EPIC'}),cap=el('p',{class:'note'});let i=0;const s=()=>{img.src=im[i].url;cap.textContent=fmt(im[i].date+'Z')+' UTC · '+im[i].caption;i=(i+1)%im.length};s();const b=el('button',{class:'btn sm',onclick:()=>{if(t){clearInterval(t);t=0;b.textContent='Play rotation'}else{t=setInterval(s,900);timers.push(t);b.textContent='Pause'}}},'Play rotation');box.replaceChildren(img,el('div',{class:'row'},b,el('button',{class:'btn sm',onclick:s},'Next frame')),cap)}).catch(()=>box.replaceChildren(el('div',{class:'alert warn'},'EPIC imagery is unavailable. Check the server NASA key or try later.')));return c},
 donki(){const box=el('div',{},el('p',{class:'note'},'Loading NASA DONKI…'));get('/api/nasa/donki').then(d=>{const lvl=d.level;box.replaceChildren(el('div',{class:'alert '+(lvl==='high'?'critical':lvl==='elevated'?'warn':'ok')},'Space weather, last 7 days: '+lvl),el('div',{class:'tiles'},tile('Solar flares',d.flares.length),tile('CMEs',d.cmes.length),tile('Geomagnetic storms',d.storms.length)),el('table',{},[...d.flares.slice(-5).map(x=>['Flare '+(x.classType||''),x.beginTime]),...d.storms.slice(-3).map(x=>['Storm',x.startTime])].map(r=>el('tr',{},el('td',{},r[0]),el('td',{},r[1]||''))))) ;store.set('bg_space',d.level)}).catch(()=>box.replaceChildren(el('div',{class:'alert warn'},'Space weather data is unavailable right now.')));return card('Space radiation (NASA DONKI)',box,'Flares M-class and above raise crew radiation risk.',1)},
-apod(){const box=el('div',{},el('p',{class:'note'},'Loading…'));get('/api/nasa/apod').then(d=>{const media=d.media_type==='video'?el('a',{class:'btn',href:d.url,target:'_blank',rel:'noopener noreferrer'},'Watch today’s video'):el('img',{class:'fit',src:d.url,alt:d.title||'NASA Astronomy Picture of the Day'});const explanation=el('div',{class:'apod-explanation'});explanation.append(apodRichText(d.explanation||'No explanation was supplied by NASA.'));box.replaceChildren(media,el('h3',{style:'margin-top:12px'},d.title||''),explanation,el('p',{class:'note'},d.copyright?'© '+d.copyright:'NASA'))}).catch(()=>box.replaceChildren(el('div',{class:'alert warn'},'Could not load today’s picture.')));return card('Astronomy Picture of the Day',box,null,1)},
+apod(){
+ const box=el('div',{class:'apod-shell'},el('div',{class:'apod-loading'},el('span',{class:'apod-orbit'},'✦'),el('p',{},'Connecting to NASA Astronomy Picture of the Day…')));
+ const validUrl=value=>{try{const u=new URL(String(value||''),location.href);return /^https?:$/.test(u.protocol)?u.href:''}catch{return ''}};
+ const articleUrl=d=>{
+  const direct=validUrl(d.page_url||d.apod_url||d.permalink||d.article_url);
+  if(direct)return direct;
+  if(d.date&&d.title){
+   const dt=new Date(d.date+'T12:00:00Z');
+   if(!Number.isNaN(dt.getTime())){
+    const month=dt.toLocaleString('en-US',{month:'long',timeZone:'UTC'}).toLowerCase();
+    const slug=String(d.title).normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+    return 'https://science.nasa.gov/image-article/apod-'+dt.getUTCFullYear()+'-'+month+'-'+dt.getUTCDate()+'-'+slug+'/';
+   }
+  }
+  return 'https://science.nasa.gov/apod/';
+ };
+ const dateLabel=value=>{if(!value)return 'NASA · Astronomy Picture of the Day';const dt=new Date(value+'T12:00:00');return Number.isNaN(dt.getTime())?value:dt.toLocaleDateString(undefined,{year:'numeric',month:'long',day:'numeric'})};
+ const showError=()=>box.replaceChildren(el('div',{class:'apod-error'},el('span',{class:'apod-error-icon'},'!'),el('h3',{},'NASA APOD is temporarily unavailable'),el('p',{},'The page could not retrieve the daily astronomy feed. Check the server connection and try again.'),el('button',{class:'btn pri',type:'button',onclick:load},'Retry connection')));
+ const load=()=>{
+  box.replaceChildren(el('div',{class:'apod-loading'},el('span',{class:'apod-orbit'},'✦'),el('p',{},'Loading today’s NASA image…')));
+  get('/api/nasa/apod').then(d=>{
+   const title=String(d.title||'Astronomy Picture of the Day');
+   const pageUrl=articleUrl(d);
+   const header=el('div',{class:'apod-heading'},el('div',{class:'apod-eyebrow'},el('span',{class:'apod-live-dot'}),'NASA DAILY FEATURE'),el('h2',{},el('a',{href:pageUrl,target:'_blank',rel:'noopener noreferrer'},title)),el('p',{class:'apod-date'},dateLabel(d.date)));
+   const mediaBox=el('div',{class:'apod-media'});
+   if(d.media_type==='video'){
+    const videoUrl=validUrl(d.url);
+    if(videoUrl)mediaBox.append(el('div',{class:'apod-video-card'},el('span',{class:'apod-video-symbol'},'▶'),el('p',{},'Today’s APOD is a video'),el('a',{class:'btn pri',href:videoUrl,target:'_blank',rel:'noopener noreferrer'},'Watch NASA video ↗')));
+    else mediaBox.append(el('p',{class:'note'},'NASA supplied a video entry without a valid video URL.'));
+   }else{
+    const imageUrl=validUrl(d.hdurl)||validUrl(d.url);
+    if(imageUrl){
+     const img=el('img',{class:'apod-image',src:imageUrl,alt:String(d.title||'NASA Astronomy Picture of the Day'),loading:'eager',decoding:'async'});
+     img.addEventListener('error',()=>{const fallback=validUrl(d.url);if(fallback&&fallback!==img.src){img.src=fallback}else{mediaBox.replaceChildren(el('div',{class:'apod-image-fallback'},el('span',{},'Image unavailable'),el('p',{},'The NASA text feed loaded, but the image could not be displayed.')))}},{once:true});
+     const imageLink=el('a',{class:'apod-image-link',href:imageUrl,target:'_blank',rel:'noopener noreferrer','aria-label':'Open the full-resolution NASA astronomy image'},img);
+     mediaBox.append(imageLink,el('div',{class:'apod-image-hint'},'Select image to view full resolution ↗'));
+    }else mediaBox.append(el('div',{class:'apod-image-fallback'},el('span',{},'No image URL supplied'),el('p',{},'NASA returned an APOD entry without an image URL.')));
+   }
+   const explain=el('section',{class:'apod-explanation-panel'},el('div',{class:'apod-section-label'},'THE STORY BEHIND THE IMAGE'),el('div',{class:'apod-explanation'}));
+   explain.querySelector('.apod-explanation').append(apodRichText(d.explanation||'No explanation was supplied by NASA.'));
+   const credit=el('div',{class:'apod-credit'},el('span',{},'IMAGE CREDIT'),el('p',{}));
+   credit.querySelector('p').append(apodRichText(d.copyright||d.credit||'NASA'));
+   const actions=el('div',{class:'apod-actions'},el('a',{class:'btn pri',href:pageUrl,target:'_blank',rel:'noopener noreferrer'},'Read on NASA Science ↗'),el('a',{class:'btn',href:'https://science.nasa.gov/apod/',target:'_blank',rel:'noopener noreferrer'},'Explore APOD archive'));
+   box.replaceChildren(header,mediaBox,explain,el('div',{class:'apod-bottom'},credit,actions));
+  }).catch(showError);
+ };
+ load();
+ return card(null,box,'NASA Astronomy Picture of the Day · Image and explanation provided by NASA.',1)
+},
 neo(){const box=el('div',{},el('p',{class:'note'},'Loading…'));get('/api/nasa/neo').then(d=>{const l=Object.values(d.near_earth_objects||{}).flat();box.replaceChildren(el('div',{class:'tiles'},tile('Objects today',l.length),tile('Flagged hazardous',l.filter(x=>x.is_potentially_hazardous_asteroid).length)),l.length?el('table',{},el('tr',{},el('th',{},'Name'),el('th',{},'Diameter'),el('th',{},'Miss distance'),el('th',{},'Hazard')),l.slice(0,15).map(x=>el('tr',{},el('td',{},x.name),el('td',{},Math.round(x.estimated_diameter.meters.estimated_diameter_max)+' m'),el('td',{},Math.round(+x.close_approach_data[0].miss_distance.kilometers).toLocaleString()+' km'),el('td',{},x.is_potentially_hazardous_asteroid?'Yes':'No')))):el('p',{},'No data returned.'))}).catch(()=>box.replaceChildren(el('div',{class:'alert warn'},'Asteroid data is unavailable.')));return card('Near-Earth objects today (NASA NeoWs)',box,null,1)},
 iss(){const box=el('div',{},el('p',{class:'note'},'Locating the station…'));every(async()=>{try{const d=await get('https://api.wheretheiss.at/v1/satellites/25544',8000);const saa=d.latitude>-50&&d.latitude<0&&d.longitude>-90&&d.longitude<40;box.replaceChildren(el('div',{class:'tiles'},tile('Latitude',d.latitude.toFixed(2),'°'),tile('Longitude',d.longitude.toFixed(2),'°'),tile('Altitude',Math.round(d.altitude),' km'),tile('Speed',Math.round(d.velocity).toLocaleString(),' km/h')),el('div',{class:'alert '+(saa?'warn':'ok')},saa?'Inside the approximate South Atlantic Anomaly region: radiation is higher here.':'Outside the South Atlantic Anomaly region.'))}catch{box.replaceChildren(el('div',{class:'alert warn'},'Live position unavailable. Retrying.'))}},6000);return card('International Space Station',box,'Position from wheretheiss.at. The anomaly region is an approximate box.',1)},
 checklist(o){const st=store.get(o.k,{});return card(o.t,el('div',{},o.items.map((x,i)=>el('label',{class:'check'},el('input',{type:'checkbox',checked:st[i]?'':false,onchange:e=>{st[i]=e.target.checked;store.set(o.k,st)}}),x)),el('button',{class:'btn sm',onclick:()=>{store.set(o.k,{});location.reload()}},'Reset')),'Training aid. Follow your mission’s approved procedures.',0)},
