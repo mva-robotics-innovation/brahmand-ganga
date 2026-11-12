@@ -62,17 +62,50 @@ const field=(l,id,o={})=>el('label',{},l,el('input',{id,type:'number',step:o.ste
 const fmt=d=>new Date(d).toLocaleString();
 const yesterday=()=>new Date(Date.now()-864e5).toISOString().slice(0,10);
 
-/* Safely render NASA APOD explanation markup and Markdown links. */
+/* Safely render NASA APOD explanation: HTML + Markdown + escaped HTML. */
 function apodRichText(raw){
  const source=String(raw??'')
   .replace(/\\</g,'<')
   .replace(/\\>/g,'>')
   .replace(/\\\//g,'/')
-  .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,'<a href="$2">$1</a>');
+  // NASA content can contain a Markdown URL wrapped inside an HTML href.
+  .replace(/href=(["'])\[?(https?:\/\/[^\]"')]+)\]?\((https?:\/\/[^)"']+)\)\1/gi, 'href="$3"');
  const parsed=new DOMParser().parseFromString(source,'text/html');
  const allowed=new Set(['P','STRONG','B','EM','I','BR','A','UL','OL','LI']);
+ const safeUrl=value=>{
+  const href=String(value||'').trim().replace(/^\[|\]$/g,'');
+  try{
+   const u=new URL(href,location.href);
+   return (u.protocol==='https:'||u.protocol==='http:')?u.href:null;
+  }catch{return null}
+ };
+ const inlineText=value=>{
+  const frag=document.createDocumentFragment();
+  // Convert Markdown links and bold markers in text nodes only, never in HTML attributes.
+  const token=/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|\*\*([\s\S]+?)\*\*|(\r?\n)/g;
+  let last=0, match;
+  while((match=token.exec(value))){
+   if(match.index>last)frag.append(document.createTextNode(value.slice(last,match.index)));
+   if(match[1]!==undefined){
+    const href=safeUrl(match[2]);
+    if(href){
+     const a=document.createElement('a');
+     a.href=href;a.target='_blank';a.rel='noopener noreferrer';
+     a.textContent=match[1];frag.append(a);
+    }else frag.append(document.createTextNode(match[1]));
+   }else if(match[4]!==undefined){
+    frag.append(document.createElement('br'));
+   }else{
+    const strong=document.createElement('strong');
+    strong.textContent=match[3];frag.append(strong);
+   }
+   last=token.lastIndex;
+  }
+  if(last<value.length)frag.append(document.createTextNode(value.slice(last)));
+  return frag;
+ };
  const copy=node=>{
-  if(node.nodeType===Node.TEXT_NODE)return document.createTextNode(node.nodeValue||'');
+  if(node.nodeType===Node.TEXT_NODE)return inlineText(node.nodeValue||'');
   if(node.nodeType!==Node.ELEMENT_NODE)return document.createDocumentFragment();
   if(!allowed.has(node.tagName)){
    const frag=document.createDocumentFragment();
@@ -82,14 +115,16 @@ function apodRichText(raw){
   const out=document.createElement(node.tagName.toLowerCase());
   if(node.tagName==='A'){
    let href=node.getAttribute('href')||'';
+   // Also repair links whose href was itself serialized as Markdown.
    const wrapped=href.match(/^\[?(https?:\/\/[^\]]+?)\]?\((https?:\/\/[^)]+)\)$/);
    if(wrapped)href=wrapped[2];
-   try{
-    const u=new URL(href,location.href);
-    if(u.protocol==='https:'||u.protocol==='http:'){
-     out.href=u.href;out.target='_blank';out.rel='noopener noreferrer';
-    }
-   }catch{}
+   const safe=safeUrl(href);
+   if(safe){out.href=safe;out.target='_blank';out.rel='noopener noreferrer';}
+   else{
+    const frag=document.createDocumentFragment();
+    [...node.childNodes].forEach(child=>frag.append(copy(child)));
+    return frag;
+   }
   }
   [...node.childNodes].forEach(child=>out.append(copy(child)));
   return out;
